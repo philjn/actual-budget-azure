@@ -8,7 +8,7 @@ Deploy [Actual Budget](https://github.com/actualbudget/actual) on an Azure **B1s
 
 ### With domain (HTTPS via Caddy)
 
-```
+```text
 Internet                     Azure VM (B1s)
    |                      +-----------------------------+
    | HTTPS :443           | Docker Compose              |
@@ -21,7 +21,7 @@ Internet                     Azure VM (B1s)
 
 ### Without domain (HTTP only)
 
-```
+```text
 Internet                     Azure VM (B1s)
    |                      +-----------------------------+
    | HTTP :5006           | Docker                      |
@@ -35,7 +35,7 @@ Internet                     Azure VM (B1s)
 ## Security Features
 
 | Feature | Description |
-|---------|-------------|
+| ------- | ----------- |
 | **No SSH port** | Port 22 is closed in the NSG. Management via Azure Run Command. |
 | **HTTPS** (with domain) | Caddy auto-provisions and renews Let's Encrypt certificates |
 | **Automatic OS updates** | `unattended-upgrades` patches security vulnerabilities daily |
@@ -66,7 +66,7 @@ cd actual-budget-azure
 .\azure-deploy.ps1 -ResourceGroupName "actual-budget-rg" -DomainName "budget.yourdomain.com"
 ```
 
-After deployment, create a DNS A record: `budget.yourdomain.com` -> `<Public IP from output>`
+After deployment, point your subdomain to the public IP (see [Setting Up a Subdomain](#setting-up-a-subdomain) below).
 
 ### Deploy without domain (HTTP only)
 
@@ -91,7 +91,7 @@ Wait 2-3 minutes after deployment for cloud-init to finish, then open the URL fr
 ### PowerShell (`azure-deploy.ps1`)
 
 | Parameter | Required | Default | Description |
-|-----------|----------|---------|-------------|
+| --------- | -------- | ------- | ----------- |
 | `ResourceGroupName` | Yes | - | Azure resource group name |
 | `Location` | No | `eastus` | Azure region |
 | `EnvironmentName` | No | `actual-budget` | Name prefix for resources |
@@ -104,7 +104,7 @@ Wait 2-3 minutes after deployment for cloud-init to finish, then open the URL fr
 ### Bash (`azure-deploy.sh`)
 
 | Flag | Required | Default | Description |
-|------|----------|---------|-------------|
+| ---- | -------- | ------- | ----------- |
 | `-g, --resource-group` | Yes | - | Azure resource group name |
 | `-l, --location` | No | `eastus` | Azure region |
 | `-n, --name` | No | `actual-budget` | Name prefix for resources |
@@ -117,7 +117,7 @@ Wait 2-3 minutes after deployment for cloud-init to finish, then open the URL fr
 ## What Gets Deployed
 
 | Resource | Purpose | Est. Monthly Cost |
-|----------|---------|-------------------|
+| -------- | ------- | ----------------- |
 | **Virtual Machine** (B1s) | 1 vCPU, 1 GiB RAM | ~$7.50 |
 | **Managed Disk** (30 GiB Premium SSD) | OS + data | (included) |
 | **Public IP** (Static) | External access | ~$3 |
@@ -208,9 +208,65 @@ az vm run-command invoke \
     --scripts "cd /opt/actual-budget && docker compose logs caddy --tail 50"
 ```
 
+## Setting Up a Subdomain
+
+After deployment, the script outputs the VM's **static public IP address**. You need to create a DNS **A record** pointing your subdomain to this IP so Caddy can provision an HTTPS certificate.
+
+### Step-by-step
+
+1. **Copy the public IP** from the deployment output (e.g. `20.123.45.67`)
+2. **Log in to your DNS provider** (wherever you bought your domain — Cloudflare, Namecheap, GoDaddy, Route 53, Azure DNS, etc.)
+3. **Add an A record:**
+
+   | Field | Value |
+   | ----- | ----- |
+   | Type | `A` |
+   | Name / Host | `budget` (for `budget.yourdomain.com`) |
+   | Value / Points to | `20.123.45.67` (the public IP from output) |
+   | TTL | `300` (5 minutes, or "Auto") |
+
+4. **Wait for DNS propagation** (usually 1–5 minutes, can take up to 48 hours depending on provider)
+5. **Verify** the record resolves:
+
+   ```bash
+   nslookup budget.yourdomain.com
+   # Should return the VM's public IP
+   ```
+
+6. **Visit** `https://budget.yourdomain.com` — Caddy will automatically obtain a Let's Encrypt certificate on the first request
+
+### Provider-specific examples
+
+**Cloudflare:**
+
+- Go to your domain > DNS > Records > Add Record
+- Type: `A`, Name: `budget`, IPv4: `<public IP>`, Proxy status: **DNS only** (gray cloud)
+- Important: Use "DNS only" mode. Cloudflare's proxy can interfere with Caddy's certificate provisioning.
+
+**Namecheap:**
+
+- Go to Domain List > Manage > Advanced DNS > Add New Record
+- Type: `A Record`, Host: `budget`, Value: `<public IP>`, TTL: `Automatic`
+
+**Azure DNS:**
+
+```bash
+az network dns record-set a add-record \
+    --resource-group <your-dns-rg> \
+    --zone-name yourdomain.com \
+    --record-set-name budget \
+    --ipv4-address <public IP>
+```
+
+### Troubleshooting DNS
+
+- **Certificate not provisioning?** Caddy retries automatically. Check Caddy logs (see [Troubleshooting](#https-not-working)). DNS must be fully propagated before Let's Encrypt can validate.
+- **Using Cloudflare proxy (orange cloud)?** Disable it (use gray cloud / DNS only). Caddy needs direct access to handle TLS.
+- **Wildcard subdomain?** Not supported by this setup. Use a specific subdomain like `budget.yourdomain.com`.
+
 ## Repository Structure
 
-```
+```text
 actual-budget-azure/
 ├── README.md               # This file
 ├── LICENSE                  # MIT License
