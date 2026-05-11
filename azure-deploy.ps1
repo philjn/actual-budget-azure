@@ -75,21 +75,18 @@ else
     docker rm actual-server 2>/dev/null || true
     echo ""
     echo "=== Starting container ==="
-    docker run -d --name actual-server --restart unless-stopped \
-        -p 5006:5006 \
-        -v /opt/actual-budget/data:/data \
-        actualbudget/actual-server:latest
+    docker run -d --name actual-server --restart unless-stopped -p 5006:5006 -v /opt/actual-budget/data:/data actualbudget/actual-server:latest
     echo ""
     echo "=== Updated standalone Actual server ==="
 fi
 
 echo ""
 echo "=== Verifying containers ==="
-docker ps --format "  {{.Names}}\t{{.Image}}\t{{.Status}}"
+docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}"
 
 echo ""
 echo "=== Health check (waiting up to 30s) ==="
-for i in $(seq 1 6); do
+for i in 1 2 3 4 5 6; do
     if curl -sf http://localhost:5006/ > /dev/null 2>&1; then
         echo "  OK - Actual Budget is responding on port 5006"
         exit 0
@@ -106,7 +103,7 @@ exit 1
         --resource-group $ResourceGroupName `
         --name $VmName `
         --command-id RunShellScript `
-        --scripts $updateScript `
+        --scripts "$updateScript" `
         --output json | ConvertFrom-Json
 
     # value[0] = stdout, value[1] = stderr
