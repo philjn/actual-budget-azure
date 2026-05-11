@@ -59,6 +59,7 @@ if ($Update) {
     Write-Info "Updating Actual Budget on VM '$VmName'..."
 
     $updateScript = @'
+#!/bin/bash
 if [ -f /opt/actual-budget/docker-compose.yml ]; then
     cd /opt/actual-budget
     echo "=== Pulling latest images ==="
@@ -99,12 +100,18 @@ echo "    docker logs actual-server --tail 20"
 exit 1
 '@
 
+    # Write script to temp file to avoid PowerShell multi-line string mangling
+    $tempScript = [System.IO.Path]::GetTempFileName() + ".sh"
+    Set-Content -Path $tempScript -Value $updateScript -NoNewline
+
     $result = az vm run-command invoke `
         --resource-group $ResourceGroupName `
         --name $VmName `
         --command-id RunShellScript `
-        --scripts "$updateScript" `
+        --scripts "@$tempScript" `
         --output json | ConvertFrom-Json
+
+    Remove-Item $tempScript -ErrorAction SilentlyContinue
 
     # value[0] = stdout, value[1] = stderr
     $stdout = if ($result.value.Count -ge 1) { $result.value[0].message } else { "" }
