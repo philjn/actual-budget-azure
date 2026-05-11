@@ -109,8 +109,9 @@ exit 1
         --scripts $updateScript `
         --output json | ConvertFrom-Json
 
-    $stdout = $result.value | Where-Object { $_.code -like '*stdout*' } | Select-Object -ExpandProperty message
-    $stderr = $result.value | Where-Object { $_.code -like '*stderr*' } | Select-Object -ExpandProperty message
+    # value[0] = stdout, value[1] = stderr
+    $stdout = if ($result.value.Count -ge 1) { $result.value[0].message } else { "" }
+    $stderr = if ($result.value.Count -ge 2) { $result.value[1].message } else { "" }
     if ($stdout) { Write-Host $stdout }
     if ($stderr) { Write-Warn "stderr: $stderr" }
 
