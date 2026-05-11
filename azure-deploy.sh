@@ -97,26 +97,66 @@ if [[ "$UPDATE_ONLY" == true ]]; then
     UPDATE_SCRIPT='
 if [ -f /opt/actual-budget/docker-compose.yml ]; then
     cd /opt/actual-budget
+    echo "=== Pulling latest images ==="
     docker compose pull
+    echo ""
+    echo "=== Restarting containers ==="
     docker compose up -d
-    echo "Updated via Docker Compose (Caddy + Actual)"
+    echo ""
+    echo "=== Updated via Docker Compose (Caddy + Actual) ==="
 else
+    echo "=== Pulling latest image ==="
     docker pull actualbudget/actual-server:latest
-    docker stop actual-server && docker rm actual-server
-    docker run -d --name actual-server --restart unless-stopped -p 5006:5006 -v /opt/actual-budget/data:/data --health-cmd "curl -f http://localhost:5006/ || exit 1" --health-interval 30s --health-timeout 10s --health-retries 3 actualbudget/actual-server:latest
-    echo "Updated standalone Actual server"
+    docker stop actual-server 2>/dev/null || true
+    docker rm actual-server 2>/dev/null || true
+    echo ""
+    echo "=== Starting container ==="
+    docker run -d --name actual-server --restart unless-stopped \
+        -p 5006:5006 \
+        -v /opt/actual-budget/data:/data \
+        actualbudget/actual-server:latest
+    echo ""
+    echo "=== Updated standalone Actual server ==="
 fi
+
+echo ""
+echo "=== Verifying containers ==="
+docker ps --format "  {{.Names}}\t{{.Image}}\t{{.Status}}"
+
+echo ""
+echo "=== Health check (waiting up to 30s) ==="
+for i in $(seq 1 6); do
+    if curl -sf http://localhost:5006/ > /dev/null 2>&1; then
+        echo "  OK - Actual Budget is responding on port 5006"
+        exit 0
+    fi
+    echo "  Attempt $i/6 - waiting 5s..."
+    sleep 5
+done
+echo "  WARN - Actual Budget did not respond within 30s. Check logs with:"
+echo "    docker logs actual-server --tail 20"
+exit 1
 '
 
-    az vm run-command invoke \
+    RESULT=$(az vm run-command invoke \
         --resource-group "$RESOURCE_GROUP" \
         --name "$VM_NAME" \
         --command-id RunShellScript \
         --scripts "$UPDATE_SCRIPT" \
-        --output table
+        --output json)
+
+    STDOUT=$(echo "$RESULT" | grep -o '"message":"[^"]*"' | head -1 | cut -d'"' -f4)
+    echo "$STDOUT"
 
     echo ""
-    log_info "Update complete!"
+    if echo "$STDOUT" | grep -q "OK - Actual Budget is responding"; then
+        log_info "Update complete and verified!"
+    elif echo "$STDOUT" | grep -q "WARN"; then
+        log_error "Update may have failed. Check the output above."
+        exit 1
+    else
+        log_warn "Update finished but health check result is unclear. Verify manually."
+    fi
     exit 0
 fi
 
