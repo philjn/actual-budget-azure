@@ -104,6 +104,7 @@ if [ -f /opt/actual-budget/docker-compose.yml ]; then
     docker compose up -d
     echo ""
     echo "=== Updated via Docker Compose (Caddy + Actual) ==="
+    HEALTH_URL="http://localhost:80"
 else
     echo "=== Pulling latest image ==="
     docker pull actualbudget/actual-server:latest
@@ -111,30 +112,28 @@ else
     docker rm actual-server 2>/dev/null || true
     echo ""
     echo "=== Starting container ==="
-    docker run -d --name actual-server --restart unless-stopped \
-        -p 5006:5006 \
-        -v /opt/actual-budget/data:/data \
-        actualbudget/actual-server:latest
+    docker run -d --name actual-server --restart unless-stopped -p 5006:5006 -v /opt/actual-budget/data:/data actualbudget/actual-server:latest
     echo ""
     echo "=== Updated standalone Actual server ==="
+    HEALTH_URL="http://localhost:5006"
 fi
 
 echo ""
 echo "=== Verifying containers ==="
-docker ps --format "  {{.Names}}\t{{.Image}}\t{{.Status}}"
+docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}"
 
 echo ""
-echo "=== Health check (waiting up to 30s) ==="
-for i in $(seq 1 6); do
-    if curl -sf http://localhost:5006/ > /dev/null 2>&1; then
-        echo "  OK - Actual Budget is responding on port 5006"
+echo "=== Health check against $HEALTH_URL (waiting up to 60s) ==="
+for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
+    if curl -sf "$HEALTH_URL" > /dev/null 2>&1; then
+        echo "  OK - Actual Budget is responding at $HEALTH_URL"
         exit 0
     fi
-    echo "  Attempt $i/6 - waiting 5s..."
+    echo "  Attempt $i/12 - waiting 5s..."
     sleep 5
 done
-echo "  WARN - Actual Budget did not respond within 30s. Check logs with:"
-echo "    docker logs actual-server --tail 20"
+echo "  WARN - Actual Budget did not respond within 60s. Check logs with:"
+echo "    docker compose logs --tail 20"
 exit 1
 '
 
